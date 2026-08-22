@@ -11,5 +11,12 @@
 
     <p>Connecting volunteers with local community opportunities.</p>
 
+    <h2>Find Opportunities. Help Your Community.</h2>
+
+    <p>
+        Discover volunteer opportunities based on your interests,
+        skills, and location.
+    </p>
+
 </body>
 </html>
