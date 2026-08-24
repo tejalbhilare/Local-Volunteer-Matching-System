@@ -6,7 +6,7 @@ require_once "config/database.php";
 
 $message = "";
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     $email = trim($_POST["email"]);
     $password = $_POST["password"];
@@ -18,7 +18,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     } else {
 
         $stmt = $conn->prepare(
-            "SELECT id, name, email, password, role FROM users WHERE email = ?"
+            "SELECT id, name, email, password, role
+             FROM users
+             WHERE email = ?"
         );
 
         $stmt->bind_param("s", $email);
@@ -56,13 +58,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             } else {
 
                 $message = "Incorrect password.";
-
             }
 
         } else {
 
             $message = "No account found with this email.";
-
         }
     }
 }
@@ -96,10 +96,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     <form method="POST">
 
-        <label for="email">
-            Email:
-        </label>
-
+        <label for="email">Email:</label>
         <br>
 
         <input
@@ -111,10 +108,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         <br><br>
 
-        <label for="password">
-            Password:
-        </label>
-
+        <label for="password">Password:</label>
         <br>
 
         <input
