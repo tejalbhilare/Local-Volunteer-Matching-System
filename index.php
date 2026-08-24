@@ -1,3 +1,11 @@
+<?php
+
+require_once "config/database.php";
+
+echo "<h2>Database connected successfully!</h2>";
+
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,13 +18,6 @@
     <h1>Local Volunteer Matching System</h1>
 
     <p>Connecting volunteers with local community opportunities.</p>
-
-    <h2>Find Opportunities. Help Your Community.</h2>
-
-    <p>
-        Discover volunteer opportunities based on your interests,
-        skills, and location.
-    </p>
 
 </body>
 </html>
