@@ -2,81 +2,98 @@
 
 session_start();
 
+require_once "../config/database.php";
+
 // Check if user is logged in
 if (!isset($_SESSION["user_id"])) {
     header("Location: ../login.php");
     exit();
 }
 
-// Only organizations can access this dashboard
+// Check if user is an organization
 if ($_SESSION["role"] !== "organization") {
-    header("Location: ../login.php");
-    exit();
+    die("Access denied. Organization account required.");
 }
 
-require_once "../config/database.php";
-
 $user_id = $_SESSION["user_id"];
-$name = $_SESSION["name"];
 
-// Get organization ID
-$stmt = $conn->prepare("
-    SELECT id
-    FROM organizations
-    WHERE user_id = ?
-");
+// Get organization information
+$sql = "
+    SELECT 
+        u.name,
+        u.email,
+        o.id AS organization_id,
+        o.organization_name,
+        o.description,
+        o.city,
+        o.phone
+    FROM users u
+    LEFT JOIN organizations o ON u.id = o.user_id
+    WHERE u.id = ?
+";
 
+$stmt = $conn->prepare($sql);
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 
 $result = $stmt->get_result();
-
 $organization = $result->fetch_assoc();
 
-$organization_id = $organization["id"] ?? 0;
+$stmt->close();
 
+// If organization profile doesn't exist
+if (!$organization) {
+    die("Organization information not found.");
+}
 
-// Count opportunities created by this organization
-$total_opportunities = 0;
+$organization_id = $organization["organization_id"];
 
-if ($organization_id > 0) {
+// Count opportunities
+$opportunity_count = 0;
 
-    $stmt = $conn->prepare("
+if ($organization_id) {
+
+    $count_sql = "
         SELECT COUNT(*) AS total
         FROM opportunities
         WHERE organization_id = ?
-    ");
+    ";
 
-    $stmt->bind_param("i", $organization_id);
-    $stmt->execute();
+    $count_stmt = $conn->prepare($count_sql);
+    $count_stmt->bind_param("i", $organization_id);
+    $count_stmt->execute();
 
-    $result = $stmt->get_result();
-    $data = $result->fetch_assoc();
+    $count_result = $count_stmt->get_result();
+    $count_data = $count_result->fetch_assoc();
 
-    $total_opportunities = $data["total"];
+    $opportunity_count = $count_data["total"];
+
+    $count_stmt->close();
 }
 
+// Count applications for this organization's opportunities
+$application_count = 0;
 
-// Count applications received by this organization
-$total_applications = 0;
+if ($organization_id) {
 
-if ($organization_id > 0) {
-
-    $stmt = $conn->prepare("
+    $application_sql = "
         SELECT COUNT(*) AS total
         FROM applications a
-        INNER JOIN opportunities o
-            ON a.opportunity_id = o.id
-        WHERE o.organization_id = ?
-    ");
+        INNER JOIN opportunities op
+            ON a.opportunity_id = op.id
+        WHERE op.organization_id = ?
+    ";
 
-    $stmt->bind_param("i", $organization_id);
-    $stmt->execute();
+    $application_stmt = $conn->prepare($application_sql);
+    $application_stmt->bind_param("i", $organization_id);
+    $application_stmt->execute();
 
-    $result = $stmt->get_result();
-    $data = $result->fetch_assoc();
+    $application_result = $application_stmt->get_result();
+    $application_data = $application_result->fetch_assoc();
 
-    $total_applications = $data["total"];
+    $application_count = $application_data["total"];
+
+    $application_stmt->close();
 }
 
 ?>
@@ -92,80 +109,253 @@ if ($organization_id > 0) {
 
     <title>Organization Dashboard</title>
 
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            color: #333;
+        }
+
+        .navbar {
+            background: #222;
+            color: white;
+            padding: 18px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar h2 {
+            margin: 0;
+        }
+
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            margin-left: 20px;
+        }
+
+        .navbar a:hover {
+            text-decoration: underline;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1100px;
+            margin: 40px auto;
+        }
+
+        .welcome {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+        }
+
+        .welcome h1 {
+            margin-top: 0;
+        }
+
+        .welcome p {
+            color: #666;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+        }
+
+        .card h3 {
+            margin-top: 0;
+            color: #555;
+        }
+
+        .number {
+            font-size: 35px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .actions {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+        }
+
+        .actions h2 {
+            margin-top: 0;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 12px 20px;
+            margin: 8px 8px 8px 0;
+            background: #222;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+        }
+
+        .button:hover {
+            background: #444;
+        }
+
+        .logout {
+            background: #b00020;
+        }
+
+        .logout:hover {
+            background: #d00025;
+        }
+
+        @media (max-width: 700px) {
+
+            .cards {
+                grid-template-columns: 1fr;
+            }
+
+            .navbar {
+                padding: 15px 20px;
+            }
+
+            .container {
+                width: 95%;
+            }
+
+        }
+
+    </style>
+
 </head>
 
 <body>
 
-    <header>
+    <!-- NAVIGATION -->
 
-        <h1>Local Volunteer Matching System</h1>
+    <div class="navbar">
 
-        <p>
-            Welcome,
-            <strong>
-                <?php echo htmlspecialchars($name); ?>
-            </strong>!
-        </p>
+        <h2>Volunteer Match</h2>
 
-    </header>
+        <div>
 
-    <hr>
+            <a href="../index.php">Home</a>
 
-    <main>
+            <a href="../opportunities.php">Opportunities</a>
 
-        <h2>Organization Dashboard</h2>
+            <a href="../logout.php">Logout</a>
 
-        <p>
-            Create volunteer opportunities and manage applications
-            from volunteers.
-        </p>
+        </div>
+
+    </div>
 
 
-        <section>
+    <!-- MAIN CONTENT -->
 
-            <h3>Dashboard Summary</h3>
+    <div class="container">
 
-            <p>
-                <strong>Total Opportunities:</strong>
-                <?php echo $total_opportunities; ?>
-            </p>
+        <!-- WELCOME -->
+
+        <div class="welcome">
+
+            <h1>
+                Welcome, <?php echo htmlspecialchars($organization["organization_name"]); ?>!
+            </h1>
 
             <p>
-                <strong>Applications Received:</strong>
-                <?php echo $total_applications; ?>
+                Manage your volunteer opportunities and applications from your dashboard.
             </p>
 
-        </section>
+        </div>
 
 
-        <hr>
+        <!-- STATISTICS -->
+
+        <div class="cards">
+
+            <div class="card">
+
+                <h3>Total Opportunities</h3>
+
+                <div class="number">
+                    <?php echo $opportunity_count; ?>
+                </div>
+
+                <p>Opportunities created by your organization.</p>
+
+            </div>
 
 
-        <section>
+            <div class="card">
 
-            <h3>Organization Menu</h3>
+                <h3>Total Applications</h3>
 
-            <p>
-                <a href="create-opportunity.php">
-                    Create Opportunity
-                </a>
-            </p>
+                <div class="number">
+                    <?php echo $application_count; ?>
+                </div>
 
-            <p>
-                <a href="../opportunities.php">
-                    View Opportunities
-                </a>
-            </p>
+                <p>Volunteer applications received.</p>
 
-            <p>
-                <a href="../logout.php">
-                    Logout
-                </a>
-            </p>
+            </div>
 
-        </section>
+        </div>
 
-    </main>
+
+        <!-- ACTIONS -->
+
+        <div class="actions">
+
+            <h2>Organization Actions</h2>
+
+            <p>What would you like to do?</p>
+
+            <a
+                href="create-opportunity.php"
+                class="button"
+            >
+                + Create Opportunity
+            </a>
+
+            <a
+                href="manage-opportunities.php"
+                class="button"
+            >
+                Manage Opportunities
+            </a>
+
+            <a
+                href="applicants.php"
+                class="button"
+            >
+                View Applicants
+            </a>
+
+            <a
+                href="../logout.php"
+                class="button logout"
+            >
+                Logout
+            </a>
+
+        </div>
+
+    </div>
 
 </body>
 
