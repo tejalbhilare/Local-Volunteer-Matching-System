@@ -38,6 +38,55 @@ $organization = $organization_result->fetch_assoc();
 
 $organization_id = $organization["id"];
 
+// Handle Accept / Reject
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+
+    $application_id = intval($_POST["application_id"]);
+    $new_status = $_POST["status"];
+
+    // Allow only accepted or rejected
+    if ($new_status === "accepted" || $new_status === "rejected") {
+
+        // Make sure this application belongs to this organization
+        $check_sql = "SELECT applications.id
+                      FROM applications
+                      INNER JOIN opportunities
+                      ON applications.opportunity_id = opportunities.id
+                      WHERE applications.id = ?
+                      AND opportunities.organization_id = ?";
+
+        $check_stmt = $conn->prepare($check_sql);
+        $check_stmt->bind_param("ii", $application_id, $organization_id);
+        $check_stmt->execute();
+
+        $check_result = $check_stmt->get_result();
+
+        if ($check_result->num_rows === 1) {
+
+            $update_sql = "UPDATE applications
+                           SET status = ?
+                           WHERE id = ?";
+
+            $update_stmt = $conn->prepare($update_sql);
+            $update_stmt->bind_param(
+                "si",
+                $new_status,
+                $application_id
+            );
+
+            $update_stmt->execute();
+
+            $update_stmt->close();
+        }
+
+        $check_stmt->close();
+    }
+
+    // Refresh page
+    header("Location: applicants.php");
+    exit();
+}
+
 // Get applicants
 $sql = "SELECT
             applications.id AS application_id,
@@ -138,6 +187,28 @@ $applicants = $stmt->get_result();
             font-weight: bold;
         }
 
+        .action-form {
+            display: inline;
+        }
+
+        .accept-btn,
+        .reject-btn {
+            padding: 7px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: white;
+            margin: 2px;
+        }
+
+        .accept-btn {
+            background-color: #27ae60;
+        }
+
+        .reject-btn {
+            background-color: #c0392b;
+        }
+
         .no-applicants {
             background: white;
             padding: 30px;
@@ -189,6 +260,7 @@ $applicants = $stmt->get_result();
                 <th>Location</th>
                 <th>Applied On</th>
                 <th>Status</th>
+                <th>Action</th>
 
             </tr>
 
@@ -235,6 +307,64 @@ $applicants = $stmt->get_result();
                         }
 
                         ?>
+
+                    </td>
+
+                    <td>
+
+                        <?php if ($status === "pending"): ?>
+
+                            <form method="POST" class="action-form">
+
+                                <input
+                                    type="hidden"
+                                    name="application_id"
+                                    value="<?php echo $applicant["application_id"]; ?>"
+                                >
+
+                                <input
+                                    type="hidden"
+                                    name="status"
+                                    value="accepted"
+                                >
+
+                                <button
+                                    type="submit"
+                                    class="accept-btn"
+                                >
+                                    Accept
+                                </button>
+
+                            </form>
+
+                            <form method="POST" class="action-form">
+
+                                <input
+                                    type="hidden"
+                                    name="application_id"
+                                    value="<?php echo $applicant["application_id"]; ?>"
+                                >
+
+                                <input
+                                    type="hidden"
+                                    name="status"
+                                    value="rejected"
+                                >
+
+                                <button
+                                    type="submit"
+                                    class="reject-btn"
+                                >
+                                    Reject
+                                </button>
+
+                            </form>
+
+                        <?php else: ?>
+
+                            -
+
+                        <?php endif; ?>
 
                     </td>
 
