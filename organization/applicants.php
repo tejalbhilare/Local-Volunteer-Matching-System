@@ -1,5 +1,5 @@
-<?php
 
+<?php
 session_start();
 
 require_once "../config/database.php";
@@ -11,12 +11,12 @@ if (!isset($_SESSION["user_id"])) {
 }
 
 // Only organizations can access this page
-if ($_SESSION["role"] !== "organization") {
+if (!isset($_SESSION["role"]) || $_SESSION["role"] !== "organization") {
     header("Location: ../login.php");
     exit();
 }
 
-$user_id = $_SESSION["user_id"];
+$user_id = (int) $_SESSION["user_id"];
 
 // Get organization ID
 $stmt = $conn->prepare(
@@ -35,34 +35,44 @@ if ($organization_result->num_rows !== 1) {
 }
 
 $organization = $organization_result->fetch_assoc();
+$organization_id = (int) $organization["id"];
 
-$organization_id = $organization["id"];
+$stmt->close();
 
 // Handle Accept / Reject
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
-    $application_id = intval($_POST["application_id"]);
-    $new_status = $_POST["status"];
+    $application_id = filter_input(
+        INPUT_POST,
+        "application_id",
+        FILTER_VALIDATE_INT
+    );
 
-    // Allow only accepted or rejected
-    if ($new_status === "accepted" || $new_status === "rejected") {
+    $new_status = $_POST["status"] ?? "";
 
-        // Make sure this application belongs to this organization
+    if (
+        $application_id &&
+        in_array($new_status, ["accepted", "rejected"], true)
+    ) {
+        // Ensure the application belongs to this organization
         $check_sql = "SELECT applications.id
                       FROM applications
                       INNER JOIN opportunities
-                      ON applications.opportunity_id = opportunities.id
+                        ON applications.opportunity_id = opportunities.id
                       WHERE applications.id = ?
-                      AND opportunities.organization_id = ?";
+                        AND opportunities.organization_id = ?";
 
         $check_stmt = $conn->prepare($check_sql);
-        $check_stmt->bind_param("ii", $application_id, $organization_id);
+        $check_stmt->bind_param(
+            "ii",
+            $application_id,
+            $organization_id
+        );
         $check_stmt->execute();
 
         $check_result = $check_stmt->get_result();
 
         if ($check_result->num_rows === 1) {
-
             $update_sql = "UPDATE applications
                            SET status = ?
                            WHERE id = ?";
@@ -73,16 +83,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $new_status,
                 $application_id
             );
-
             $update_stmt->execute();
-
             $update_stmt->close();
         }
 
         $check_stmt->close();
     }
 
-    // Refresh page
     header("Location: applicants.php");
     exit();
 }
@@ -110,286 +117,420 @@ $stmt->bind_param("i", $organization_id);
 $stmt->execute();
 
 $applicants = $stmt->get_result();
-
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Applicants - Local Volunteer Matching System</title>
+    <title>Volunteer Applicants | Volunteer Match</title>
+
+    <link rel="stylesheet" href="../assets/style.css">
 
     <style>
+        .applicants-nav {
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+            padding: 16px 5%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
 
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f6f8;
+        .applicants-brand {
+            color: var(--primary);
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        .applicants-nav-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+        }
+
+        .applicants-nav-links a {
+            font-weight: 600;
+        }
+
+        .applicants-container {
+            width: 95%;
+            max-width: 1250px;
+            margin: 35px auto;
+        }
+
+        .applicants-heading {
+            background: linear-gradient(135deg, #e4f4ec, #fff);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 26px;
+            margin-bottom: 24px;
+        }
+
+        .applicants-heading h1 {
+            margin: 0 0 10px;
+            font-size: clamp(25px, 4vw, 34px);
+        }
+
+        .applicants-heading p {
+            color: var(--muted);
+            margin: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .table-panel {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .table-scroll {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        .applicants-table {
+            width: 100%;
+            min-width: 1000px;
+            border-collapse: collapse;
+        }
+
+        .applicants-table th {
+            background: #e8f2ed;
+            color: var(--text);
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .applicants-table td {
+            vertical-align: middle;
+            font-size: 14px;
+        }
+
+        .applicants-table tbody tr:hover td {
+            background: #f7fbf8;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 11px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: capitalize;
+            white-space: nowrap;
+        }
+
+        .status-pending {
+            color: #895500;
+            background: #fff1ce;
+        }
+
+        .status-accepted {
+            color: #176b3a;
+            background: #e0f4e7;
+        }
+
+        .status-rejected {
+            color: #a52a20;
+            background: #fde8e6;
+        }
+
+        .status-unknown {
+            color: #4b5563;
+            background: #edf0f2;
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+        }
+
+        .action-buttons form {
             margin: 0;
         }
 
-        nav {
-            background-color: #2c3e50;
-            padding: 15px;
+        .action-buttons button {
+            padding: 7px 11px;
+            font-size: 13px;
         }
 
-        nav a {
-            color: white;
-            text-decoration: none;
-            margin-right: 20px;
+        .action-buttons .reject-button {
+            background: #fff0ee;
+            color: var(--danger);
+            border: 1px solid #f0cbc6;
         }
 
-        .container {
-            width: 95%;
-            max-width: 1200px;
-            margin: 30px auto;
-        }
-
-        h1 {
-            color: #2c3e50;
-        }
-
-        table {
-            width: 100%;
-            background: white;
-            border-collapse: collapse;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
-        th,
-        td {
-            padding: 12px;
-            border-bottom: 1px solid #ddd;
-            text-align: left;
-        }
-
-        th {
-            background-color: #34495e;
-            color: white;
-        }
-
-        .pending {
-            color: #e67e22;
-            font-weight: bold;
-        }
-
-        .accepted {
-            color: #27ae60;
-            font-weight: bold;
-        }
-
-        .rejected {
-            color: #c0392b;
-            font-weight: bold;
-        }
-
-        .action-form {
-            display: inline;
-        }
-
-        .accept-btn,
-        .reject-btn {
-            padding: 7px 10px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            color: white;
-            margin: 2px;
-        }
-
-        .accept-btn {
-            background-color: #27ae60;
-        }
-
-        .reject-btn {
-            background-color: #c0392b;
+        .action-buttons .reject-button:hover {
+            background: #fbe0dc;
         }
 
         .no-applicants {
-            background: white;
-            padding: 30px;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 38px 22px;
             text-align: center;
-            border-radius: 8px;
+            box-shadow: var(--shadow);
         }
 
-    </style>
+        .no-applicants h2 {
+            margin-top: 0;
+        }
 
+        .no-applicants p {
+            color: var(--muted);
+        }
+
+        .applicants-footer {
+            text-align: center;
+            padding: 24px 12px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        @media (max-width: 650px) {
+            .applicants-container {
+                margin-top: 22px;
+            }
+
+            .applicants-heading {
+                padding: 21px;
+            }
+
+            .applicants-nav-links {
+                gap: 12px;
+            }
+        }
+    </style>
 </head>
 
 <body>
 
-<nav>
+    <nav class="applicants-nav">
+        <a href="../index.php" class="applicants-brand">
+            Volunteer Match
+        </a>
 
-    <a href="dashboard.php">Dashboard</a>
-
-    <a href="create-opportunity.php">Create Opportunity</a>
-
-    <a href="manage-opportunities.php">Manage Opportunities</a>
-
-    <a href="applicants.php">Applicants</a>
-
-    <a href="../logout.php">Logout</a>
-
-</nav>
-
-<div class="container">
-
-    <h1>Volunteer Applicants</h1>
-
-    <p>
-        Organization:
-        <strong>
-            <?php echo htmlspecialchars($organization["organization_name"]); ?>
-        </strong>
-    </p>
-
-    <?php if ($applicants->num_rows > 0): ?>
-
-        <table>
-
-            <tr>
-
-                <th>Volunteer</th>
-                <th>Email</th>
-                <th>Opportunity</th>
-                <th>Event Date</th>
-                <th>Location</th>
-                <th>Applied On</th>
-                <th>Status</th>
-                <th>Action</th>
-
-            </tr>
-
-            <?php while ($applicant = $applicants->fetch_assoc()): ?>
-
-                <tr>
-
-                    <td>
-                        <?php echo htmlspecialchars($applicant["name"]); ?>
-                    </td>
-
-                    <td>
-                        <?php echo htmlspecialchars($applicant["email"]); ?>
-                    </td>
-
-                    <td>
-                        <?php echo htmlspecialchars($applicant["title"]); ?>
-                    </td>
-
-                    <td>
-                        <?php echo htmlspecialchars($applicant["event_date"]); ?>
-                    </td>
-
-                    <td>
-                        <?php echo htmlspecialchars($applicant["location"]); ?>
-                    </td>
-
-                    <td>
-                        <?php echo htmlspecialchars($applicant["applied_at"]); ?>
-                    </td>
-
-                    <td>
-
-                        <?php
-
-                        $status = $applicant["status"];
-
-                        if ($status === "pending") {
-                            echo '<span class="pending">Pending</span>';
-                        } elseif ($status === "accepted") {
-                            echo '<span class="accepted">Accepted</span>';
-                        } elseif ($status === "rejected") {
-                            echo '<span class="rejected">Rejected</span>';
-                        }
-
-                        ?>
-
-                    </td>
-
-                    <td>
-
-                        <?php if ($status === "pending"): ?>
-
-                            <form method="POST" class="action-form">
-
-                                <input
-                                    type="hidden"
-                                    name="application_id"
-                                    value="<?php echo $applicant["application_id"]; ?>"
-                                >
-
-                                <input
-                                    type="hidden"
-                                    name="status"
-                                    value="accepted"
-                                >
-
-                                <button
-                                    type="submit"
-                                    class="accept-btn"
-                                >
-                                    Accept
-                                </button>
-
-                            </form>
-
-                            <form method="POST" class="action-form">
-
-                                <input
-                                    type="hidden"
-                                    name="application_id"
-                                    value="<?php echo $applicant["application_id"]; ?>"
-                                >
-
-                                <input
-                                    type="hidden"
-                                    name="status"
-                                    value="rejected"
-                                >
-
-                                <button
-                                    type="submit"
-                                    class="reject-btn"
-                                >
-                                    Reject
-                                </button>
-
-                            </form>
-
-                        <?php else: ?>
-
-                            -
-
-                        <?php endif; ?>
-
-                    </td>
-
-                </tr>
-
-            <?php endwhile; ?>
-
-        </table>
-
-    <?php else: ?>
-
-        <div class="no-applicants">
-
-            <h2>No Applicants Yet</h2>
-
-            <p>
-                Volunteers have not applied to your opportunities yet.
-            </p>
-
+        <div class="applicants-nav-links">
+            <a href="dashboard.php">Dashboard</a>
+            <a href="create-opportunity.php">Create Opportunity</a>
+            <a href="manage-opportunities.php">Manage Opportunities</a>
+            <a href="../logout.php">Logout</a>
         </div>
+    </nav>
 
-    <?php endif; ?>
+    <main class="applicants-container">
 
-</div>
+        <header class="applicants-heading">
+            <h1>Volunteer Applicants</h1>
+            <p>
+                Organization:
+                <strong>
+                    <?php
+                    echo htmlspecialchars($organization["organization_name"]);
+                    ?>
+                </strong>
+            </p>
+            <p>
+                Review applications and update each volunteer's application status.
+            </p>
+        </header>
+
+        <?php if ($applicants->num_rows > 0): ?>
+
+            <section class="table-panel">
+                <div class="table-scroll">
+
+                    <table class="applicants-table">
+                        <thead>
+                            <tr>
+                                <th>Volunteer</th>
+                                <th>Email</th>
+                                <th>Opportunity</th>
+                                <th>Event Date</th>
+                                <th>Location</th>
+                                <th>Applied On</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            <?php while ($applicant = $applicants->fetch_assoc()): ?>
+
+                                <?php
+                                $status = strtolower(
+                                    trim($applicant["status"] ?? "")
+                                );
+
+                                $status_class = "status-unknown";
+
+                                if ($status === "pending") {
+                                    $status_class = "status-pending";
+                                } elseif ($status === "accepted") {
+                                    $status_class = "status-accepted";
+                                } elseif ($status === "rejected") {
+                                    $status_class = "status-rejected";
+                                }
+                                ?>
+
+                                <tr>
+                                    <td>
+                                        <?php
+                                        echo htmlspecialchars($applicant["name"]);
+                                        ?>
+                                    </td>
+
+                                    <td>
+                                        <?php
+                                        echo htmlspecialchars($applicant["email"]);
+                                        ?>
+                                    </td>
+
+                                    <td>
+                                        <?php
+                                        echo htmlspecialchars($applicant["title"]);
+                                        ?>
+                                    </td>
+
+                                    <td>
+                                        <?php
+                                        echo htmlspecialchars(
+                                            $applicant["event_date"] ?? "Not specified"
+                                        );
+                                        ?>
+                                    </td>
+
+                                    <td>
+                                        <?php
+                                        echo htmlspecialchars(
+                                            $applicant["location"] ?? "Not specified"
+                                        );
+                                        ?>
+                                    </td>
+
+                                    <td>
+                                        <?php
+                                        echo htmlspecialchars(
+                                            $applicant["applied_at"] ?? "Not available"
+                                        );
+                                        ?>
+                                    </td>
+
+                                    <td>
+                                        <span class="status-badge <?php echo $status_class; ?>">
+                                            <?php
+                                            echo htmlspecialchars(
+                                                $status !== ""
+                                                    ? ucfirst($status)
+                                                    : "Unknown"
+                                            );
+                                            ?>
+                                        </span>
+                                    </td>
+
+                                    <td>
+                                        <?php if ($status === "pending"): ?>
+
+                                            <div class="action-buttons">
+
+                                                <form method="POST" action="applicants.php">
+                                                    <input
+                                                        type="hidden"
+                                                        name="application_id"
+                                                        value="<?php
+                                                            echo (int) $applicant["application_id"];
+                                                        ?>"
+                                                    >
+
+                                                    <input
+                                                        type="hidden"
+                                                        name="status"
+                                                        value="accepted"
+                                                    >
+
+                                                    <button type="submit">
+                                                        Accept
+                                                    </button>
+                                                </form>
+
+                                                <form
+                                                    method="POST"
+                                                    action="applicants.php"
+                                                    onsubmit="return confirm('Are you sure you want to reject this application?');"
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="application_id"
+                                                        value="<?php
+                                                            echo (int) $applicant["application_id"];
+                                                        ?>"
+                                                    >
+
+                                                    <input
+                                                        type="hidden"
+                                                        name="status"
+                                                        value="rejected"
+                                                    >
+
+                                                    <button
+                                                        type="submit"
+                                                        class="reject-button"
+                                                    >
+                                                        Reject
+                                                    </button>
+                                                </form>
+
+                                            </div>
+
+                                        <?php else: ?>
+
+                                            <span class="status-badge status-unknown">
+                                                Reviewed
+                                            </span>
+
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+
+                            <?php endwhile; ?>
+                        </tbody>
+                    </table>
+
+                </div>
+            </section>
+
+        <?php else: ?>
+
+            <section class="no-applicants">
+                <h2>No Applicants Yet</h2>
+                <p>
+                    Volunteers have not applied to your opportunities yet.
+                    New applications will appear here.
+                </p>
+
+                <a class="btn" href="manage-opportunities.php">
+                    Manage Opportunities
+                </a>
+            </section>
+
+        <?php endif; ?>
+
+        <?php $stmt->close(); ?>
+
+    </main>
+
+    <footer class="applicants-footer">
+        Local Volunteer Matching System &copy; <?php echo date("Y"); ?>
+    </footer>
 
 </body>
-
 </html>

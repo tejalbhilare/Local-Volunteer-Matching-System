@@ -1,285 +1,359 @@
-<?php
 
+<?php
 session_start();
 
 require_once "../config/database.php";
 
-// Check login
+// Check login.
 if (!isset($_SESSION["user_id"])) {
     header("Location: ../login.php");
     exit();
 }
 
-// Only admin can access
-if ($_SESSION["role"] !== "admin") {
+// Only administrators can access this page.
+if (!isset($_SESSION["role"]) || $_SESSION["role"] !== "admin") {
     header("Location: ../login.php");
     exit();
 }
 
-// Delete user
-if ($_SERVER["REQUEST_METHOD"] === "POST") {
+$success = "";
+$error = "";
 
-    if (isset($_POST["delete_user"])) {
+// Delete user.
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["delete_user"])) {
 
-        $user_id = intval($_POST["user_id"]);
+    $user_id = filter_input(INPUT_POST, "user_id", FILTER_VALIDATE_INT);
 
-        // Prevent admin from deleting their own account
-        if ($user_id === intval($_SESSION["user_id"])) {
+    if (!$user_id || $user_id < 1) {
+        $error = "Invalid user selected.";
+    } elseif ($user_id === (int) $_SESSION["user_id"]) {
+        $error = "You cannot delete your own admin account.";
+    } else {
+        $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
 
-            $error = "You cannot delete your own admin account.";
-
-        } else {
-
-            $stmt = $conn->prepare(
-                "DELETE FROM users WHERE id = ?"
-            );
-
+        if ($stmt) {
             $stmt->bind_param("i", $user_id);
 
             if ($stmt->execute()) {
-
-                $success = "User deleted successfully.";
-
+                if ($stmt->affected_rows > 0) {
+                    $success = "User deleted successfully.";
+                } else {
+                    $error = "User not found. The list may already be up to date.";
+                }
             } else {
-
-                $error = "Failed to delete user.";
-
+                // Related records or database constraints may prevent deletion.
+                error_log("User deletion failed: " . $stmt->error);
+                $error = "Unable to delete this user. They may have related records.";
             }
 
             $stmt->close();
+        } else {
+            error_log("Delete-user query preparation failed: " . $conn->error);
+            $error = "A database error occurred. Please try again.";
         }
     }
 }
 
-// Get all users
+// Get all users.
 $result = $conn->query(
     "SELECT id, name, email, role
      FROM users
      ORDER BY id ASC"
 );
 
+if (!$result) {
+    error_log("Manage users query failed: " . $conn->error);
+    die("Unable to load users at this time. Please try again later.");
+}
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Manage Users - Local Volunteer Matching System</title>
+    <title>Manage Users | Local Volunteer Matching System</title>
+
+    <link rel="stylesheet" href="../assets/style.css">
 
     <style>
-
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f6f8;
-            margin: 0;
+        .users-container {
+            max-width: 1150px;
+            margin: 0 auto;
+            padding: 28px 16px 40px;
         }
 
-        nav {
-            background-color: #2c3e50;
-            padding: 15px;
+        .users-header {
+            padding: 25px;
+            margin-bottom: 22px;
         }
 
-        nav a {
-            color: white;
+        .users-header h1 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        .users-header p {
+            margin-bottom: 0;
+            color: var(--muted, #667085);
+            line-height: 1.6;
+        }
+
+        .users-nav {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 22px;
+        }
+
+        .users-nav a {
             text-decoration: none;
-            margin-right: 20px;
-        }
-
-        .container {
-            width: 90%;
-            max-width: 1100px;
-            margin: 30px auto;
-        }
-
-        h1 {
-            color: #2c3e50;
         }
 
         .message {
-            padding: 12px;
-            margin-top: 20px;
-            border-radius: 5px;
+            padding: 13px 16px;
+            border-radius: 8px;
+            margin-bottom: 18px;
+            line-height: 1.5;
         }
 
         .success {
-            background-color: #d4edda;
-            color: #155724;
+            background: #e7f6eb;
+            color: #176534;
+            border: 1px solid #b7e2c3;
         }
 
         .error {
-            background-color: #f8d7da;
-            color: #721c24;
+            background: #fff0f0;
+            color: #a12626;
+            border: 1px solid #f1c2c2;
         }
 
-        table {
+        .users-table-card {
+            padding: 20px;
+        }
+
+        .table-heading {
+            margin: 0 0 15px;
+        }
+
+        .table-scroll {
             width: 100%;
+            overflow-x: auto;
+            border: 1px solid var(--border, #e0e7e1);
+            border-radius: 8px;
+        }
+
+        .users-table {
+            width: 100%;
+            min-width: 720px;
             border-collapse: collapse;
-            background-color: white;
-            margin-top: 25px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            background: var(--surface, #ffffff);
         }
 
-        th,
-        td {
+        .users-table th,
+        .users-table td {
             padding: 14px;
-            border: 1px solid #ddd;
             text-align: left;
+            border-bottom: 1px solid var(--border, #e0e7e1);
+            vertical-align: middle;
         }
 
-        th {
-            background-color: #2c3e50;
-            color: white;
+        .users-table th {
+            background: var(--primary-dark, #176534);
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
         }
 
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
+        .users-table tbody tr:nth-child(even) {
+            background: var(--background, #f5f8f5);
         }
 
-        .role {
-            font-weight: bold;
+        .users-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .user-role {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            background: var(--background, #edf5ee);
+            color: var(--primary-dark, #176534);
+            font-size: 13px;
+            font-weight: 600;
+            overflow-wrap: anywhere;
         }
 
         .delete-button {
-            background-color: #e74c3c;
-            color: white;
-            border: none;
             padding: 8px 12px;
-            border-radius: 5px;
+            border: none;
+            border-radius: 6px;
+            background: #b42318;
+            color: #ffffff;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
         }
 
         .delete-button:hover {
-            background-color: #c0392b;
+            background: #8f1c13;
         }
 
         .protected {
-            color: #777;
+            color: var(--muted, #667085);
+            font-size: 13px;
+            font-weight: 600;
         }
 
-    </style>
+        .empty-state {
+            padding: 25px;
+            text-align: center;
+        }
 
+        @media (max-width: 600px) {
+            .users-container {
+                padding: 18px 12px 28px;
+            }
+
+            .users-header,
+            .users-table-card {
+                padding: 17px;
+            }
+
+            .users-nav {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .users-nav a {
+                text-align: center;
+            }
+        }
+    </style>
 </head>
 
 <body>
 
-<nav>
+<main class="users-container">
 
-    <a href="dashboard.php">Admin Dashboard</a>
+    <section class="card users-header">
+        <h1>Manage Users</h1>
+        <p>
+            View registered users, check their roles, and manage accounts.
+        </p>
+    </section>
 
-    <a href="users.php">Manage Users</a>
+    <nav class="users-nav" aria-label="Admin navigation">
+        <a class="btn" href="dashboard.php">Admin Dashboard</a>
+        <a class="btn" href="users.php">Manage Users</a>
+        <a class="btn" href="../index.php">Home</a>
+        <a class="btn" href="../logout.php">Logout</a>
+    </nav>
 
-    <a href="../index.php">Home</a>
-
-    <a href="../logout.php">Logout</a>
-
-</nav>
-
-<div class="container">
-
-    <h1>Manage Users</h1>
-
-    <p>
-        View and manage registered users in the system.
-    </p>
-
-    <?php if (isset($success)) { ?>
-
-        <div class="message success">
+    <?php if ($success !== ""): ?>
+        <div class="message success" role="status">
             <?php echo htmlspecialchars($success); ?>
         </div>
+    <?php endif; ?>
 
-    <?php } ?>
-
-    <?php if (isset($error)) { ?>
-
-        <div class="message error">
+    <?php if ($error !== ""): ?>
+        <div class="message error" role="alert">
             <?php echo htmlspecialchars($error); ?>
         </div>
+    <?php endif; ?>
 
-    <?php } ?>
+    <section class="card users-table-card">
+        <h2 class="table-heading">Registered Users</h2>
 
-    <table>
+        <?php if ($result->num_rows > 0): ?>
 
-        <tr>
+            <div class="table-scroll">
+                <table class="users-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
 
-            <th>ID</th>
+                    <tbody>
+                        <?php while ($user = $result->fetch_assoc()): ?>
+                            <tr>
+                                <td><?php echo (int) $user["id"]; ?></td>
 
-            <th>Name</th>
+                                <td>
+                                    <?php echo htmlspecialchars($user["name"]); ?>
+                                </td>
 
-            <th>Email</th>
+                                <td>
+                                    <?php echo htmlspecialchars($user["email"]); ?>
+                                </td>
 
-            <th>Role</th>
+                                <td>
+                                    <span class="user-role">
+                                        <?php echo htmlspecialchars($user["role"]); ?>
+                                    </span>
+                                </td>
 
-            <th>Action</th>
+                                <td>
+                                    <?php if ((int) $user["id"] === (int) $_SESSION["user_id"]): ?>
 
-        </tr>
+                                        <span class="protected">Current Admin</span>
 
-        <?php while ($user = $result->fetch_assoc()) { ?>
+                                    <?php else: ?>
 
-            <tr>
+                                        <form
+                                            method="POST"
+                                            action="users.php"
+                                            onsubmit="return confirm('Are you sure you want to delete this user? Related records or database constraints may affect deletion.');"
+                                        >
+                                            <input
+                                                type="hidden"
+                                                name="user_id"
+                                                value="<?php echo (int) $user["id"]; ?>"
+                                            >
 
-                <td>
-                    <?php echo $user["id"]; ?>
-                </td>
+                                            <button
+                                                type="submit"
+                                                name="delete_user"
+                                                value="1"
+                                                class="delete-button"
+                                            >
+                                                Delete
+                                            </button>
+                                        </form>
 
-                <td>
-                    <?php echo htmlspecialchars($user["name"]); ?>
-                </td>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
+            </div>
 
-                <td>
-                    <?php echo htmlspecialchars($user["email"]); ?>
-                </td>
+        <?php else: ?>
 
-                <td class="role">
-                    <?php echo htmlspecialchars($user["role"]); ?>
-                </td>
+            <div class="empty-state">
+                <h3>No Users Found</h3>
+                <p>There are currently no registered users to display.</p>
+            </div>
 
-                <td>
+        <?php endif; ?>
+    </section>
 
-                    <?php if ($user["id"] == $_SESSION["user_id"]) { ?>
-
-                        <span class="protected">
-                            Current Admin
-                        </span>
-
-                    <?php } else { ?>
-
-                        <form method="POST"
-                              onsubmit="return confirm('Are you sure you want to delete this user? This may also delete related records.');">
-
-                            <input
-                                type="hidden"
-                                name="user_id"
-                                value="<?php echo $user["id"]; ?>"
-                            >
-
-                            <button
-                                type="submit"
-                                name="delete_user"
-                                class="delete-button"
-                            >
-                                Delete
-                            </button>
-
-                        </form>
-
-                    <?php } ?>
-
-                </td>
-
-            </tr>
-
-        <?php } ?>
-
-    </table>
-
-</div>
+</main>
 
 </body>
-
 </html>
+
+<?php
+$result->free();
+$conn->close();
+?>

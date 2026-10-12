@@ -4,13 +4,13 @@ session_start();
 
 require_once "../config/database.php";
 
-// Check whether the user is logged in.
+// Check login.
 if (!isset($_SESSION["user_id"])) {
     header("Location: ../login.php");
     exit;
 }
 
-// Check the user's role.
+// Check organization role.
 if (!isset($_SESSION["role"]) || $_SESSION["role"] !== "organization") {
     $current_role = $_SESSION["role"] ?? "not set";
     ?>
@@ -20,24 +20,28 @@ if (!isset($_SESSION["role"]) || $_SESSION["role"] !== "organization") {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Access Check</title>
+        <link rel="stylesheet" href="../assets/style.css">
     </head>
     <body>
-        <h2>Organization Access Check</h2>
-        <p>Your current session role is:
-            <strong><?php echo htmlspecialchars($current_role); ?></strong>
-        </p>
-        <p>Please log out and sign in again with your organization account.</p>
-        <a href="../logout.php">Log Out</a>
+        <main class="container">
+            <section class="card">
+                <h2>Organization Access Check</h2>
+                <p>Your current session role is:
+                    <strong><?php echo htmlspecialchars($current_role); ?></strong>
+                </p>
+                <p>Please log out and sign in again with your organization account.</p>
+                <a class="btn" href="../logout.php">Log Out</a>
+            </section>
+        </main>
     </body>
     </html>
     <?php
     exit;
 }
 
-// Get the logged-in user's ID.
 $user_id = (int) $_SESSION["user_id"];
 
-// Find this user's organization profile.
+// Find the organization's profile.
 $organization_sql = "
     SELECT id, organization_name
     FROM organizations
@@ -59,15 +63,12 @@ $organization = $organization_result->fetch_assoc();
 $organization_stmt->close();
 
 if (!$organization) {
-    die(
-        "Organization profile not found for your account. " .
-        "Please check the organizations table in your database."
-    );
+    die("Organization profile not found for your account. Please check your organization profile.");
 }
 
 $organization_id = (int) $organization["id"];
 
-// Get only opportunities belonging to this organization.
+// Fetch only this organization's opportunities.
 $opportunities_sql = "
     SELECT id, title, description, location,
            required_skills, event_date, created_at
@@ -93,193 +94,219 @@ $opportunities_result = $opportunities_stmt->get_result();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>Manage Opportunities</title>
+    <title>Manage Opportunities | Local Volunteer Matching System</title>
+    <link rel="stylesheet" href="../assets/style.css">
 
     <style>
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            padding: 25px;
-            font-family: Arial, sans-serif;
-            background: #f4f7fb;
-            color: #222;
-        }
-
-        .container {
-            max-width: 1000px;
+        .manage-container {
+            max-width: 1050px;
             margin: 0 auto;
+            padding: 24px 16px 40px;
         }
 
-        .header {
-            background: #fff;
-            padding: 22px;
-            border-radius: 10px;
-            margin-bottom: 22px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        .manage-header {
+            padding: 28px;
+            margin-bottom: 26px;
         }
 
-        .header h1 {
+        .manage-header h1 {
             margin-top: 0;
-            color: #2457a7;
+            margin-bottom: 10px;
         }
 
-        .navigation {
+        .organization-name {
+            display: inline-block;
+            margin-top: 5px;
+            font-weight: 600;
+        }
+
+        .page-description {
+            margin-bottom: 0;
+        }
+
+        .manage-navigation {
             display: flex;
             flex-wrap: wrap;
-            gap: 12px;
-            margin-top: 18px;
+            gap: 10px;
+            margin-top: 22px;
         }
 
-        .button {
-            display: inline-block;
-            padding: 10px 15px;
-            background: #2457a7;
-            color: white;
+        .manage-navigation a {
             text-decoration: none;
-            border-radius: 5px;
         }
 
-        .button:hover {
-            background: #173d7a;
+        .opportunity-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+            gap: 20px;
         }
 
-        .opportunity {
-            background: white;
-            padding: 22px;
-            margin-bottom: 18px;
-            border-radius: 9px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        .opportunity-card {
+            padding: 24px;
+            min-width: 0;
         }
 
-        .opportunity h2 {
+        .opportunity-card h2 {
             margin-top: 0;
-            color: #2457a7;
-        }
-
-        .detail {
-            margin: 10px 0;
-            line-height: 1.6;
+            margin-bottom: 18px;
             overflow-wrap: anywhere;
         }
 
-        .empty {
-            background: white;
-            padding: 25px;
-            border-radius: 9px;
+        .opportunity-detail {
+            margin: 13px 0;
+            line-height: 1.7;
+            overflow-wrap: anywhere;
+        }
+
+        .detail-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 3px;
+        }
+
+        .opportunity-id {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 5px 10px;
+            border-radius: 20px;
+            background: var(--background, #f0f7f1);
+            font-size: 13px;
+        }
+
+        .empty-state {
+            padding: 35px 24px;
+            text-align: center;
+        }
+
+        .empty-state h2 {
+            margin-top: 0;
+        }
+
+        @media (max-width: 600px) {
+            .manage-container {
+                padding: 16px 12px 28px;
+            }
+
+            .manage-header,
+            .opportunity-card {
+                padding: 20px;
+            }
+
+            .manage-navigation {
+                flex-direction: column;
+            }
+
+            .manage-navigation a {
+                text-align: center;
+                width: 100%;
+            }
         }
     </style>
 </head>
 
 <body>
 
-<div class="container">
+<main class="manage-container">
 
-    <div class="header">
+    <section class="card manage-header">
         <h1>Manage Opportunities</h1>
 
         <p>
             Organization:
-            <strong>
+            <span class="organization-name">
                 <?php
-                echo htmlspecialchars(
-                    $organization["organization_name"]
-                );
+                echo htmlspecialchars($organization["organization_name"]);
                 ?>
-            </strong>
+            </span>
         </p>
 
-        <p>View the volunteer opportunities created by your organization.</p>
+        <p class="page-description">
+            View the volunteer opportunities created by your organization.
+        </p>
 
-        <div class="navigation">
-            <a class="button" href="dashboard.php">
-                Organization Dashboard
-            </a>
-
-            <a class="button" href="create-opportunity.php">
-                Create Opportunity
-            </a>
-
-            <a class="button" href="applicants.php">
-                View Applicants
-            </a>
-
-            <a class="button" href="../logout.php">
-                Logout
-            </a>
-        </div>
-    </div>
+        <nav class="manage-navigation" aria-label="Organization navigation">
+            <a class="btn" href="dashboard.php">Dashboard</a>
+            <a class="btn" href="create-opportunity.php">+ Create Opportunity</a>
+            <a class="btn" href="applicants.php">View Applicants</a>
+            <a class="btn" href="../logout.php">Logout</a>
+        </nav>
+    </section>
 
     <?php if ($opportunities_result->num_rows > 0): ?>
 
-        <?php while ($opportunity = $opportunities_result->fetch_assoc()): ?>
+        <section class="opportunity-list" aria-label="Your opportunities">
 
-            <div class="opportunity">
+            <?php while ($opportunity = $opportunities_result->fetch_assoc()): ?>
 
-                <h2>
-                    <?php echo htmlspecialchars($opportunity["title"]); ?>
-                </h2>
+                <article class="card opportunity-card">
 
-                <p class="detail">
-                    <strong>Description:</strong><br>
-                    <?php
-                    echo nl2br(
-                        htmlspecialchars($opportunity["description"] ?? "")
-                    );
-                    ?>
-                </p>
+                    <h2>
+                        <?php echo htmlspecialchars($opportunity["title"]); ?>
+                    </h2>
 
-                <p class="detail">
-                    <strong>Location:</strong>
-                    <?php
-                    echo htmlspecialchars($opportunity["location"] ?? "");
-                    ?>
-                </p>
+                    <div class="opportunity-detail">
+                        <span class="detail-label">Description</span>
+                        <?php
+                        echo nl2br(
+                            htmlspecialchars($opportunity["description"] ?? "")
+                        );
+                        ?>
+                    </div>
 
-                <p class="detail">
-                    <strong>Required Skills:</strong>
-                    <?php
-                    echo htmlspecialchars(
-                        $opportunity["required_skills"] ?? "Not specified"
-                    );
-                    ?>
-                </p>
+                    <div class="opportunity-detail">
+                        <span class="detail-label">Location</span>
+                        <?php
+                        echo htmlspecialchars(
+                            $opportunity["location"] ?: "Not specified"
+                        );
+                        ?>
+                    </div>
 
-                <p class="detail">
-                    <strong>Event Date:</strong>
-                    <?php
-                    echo htmlspecialchars($opportunity["event_date"] ?? "");
-                    ?>
-                </p>
+                    <div class="opportunity-detail">
+                        <span class="detail-label">Required Skills</span>
+                        <?php
+                        echo htmlspecialchars(
+                            $opportunity["required_skills"] ?: "Not specified"
+                        );
+                        ?>
+                    </div>
 
-                <p class="detail">
-                    <strong>Opportunity ID:</strong>
-                    <?php echo (int) $opportunity["id"]; ?>
-                </p>
+                    <div class="opportunity-detail">
+                        <span class="detail-label">Event Date</span>
+                        <?php
+                        echo htmlspecialchars(
+                            $opportunity["event_date"] ?: "Not specified"
+                        );
+                        ?>
+                    </div>
 
-            </div>
+                    <span class="opportunity-id">
+                        Opportunity ID: <?php echo (int) $opportunity["id"]; ?>
+                    </span>
 
-        <?php endwhile; ?>
+                </article>
+
+            <?php endwhile; ?>
+
+        </section>
 
     <?php else: ?>
 
-        <div class="empty">
+        <section class="card empty-state">
             <h2>No Opportunities Found</h2>
             <p>
-                Your organization does not have any opportunities listed yet.
+                Your organization has not listed any opportunities yet.
+                Create one to start connecting with volunteers.
             </p>
 
-            <a class="button" href="create-opportunity.php">
+            <a class="btn" href="create-opportunity.php">
                 Create Your First Opportunity
             </a>
-        </div>
+        </section>
 
     <?php endif; ?>
 
-</div>
+</main>
 
 </body>
 </html>

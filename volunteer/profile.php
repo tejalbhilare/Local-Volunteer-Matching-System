@@ -1,5 +1,5 @@
-<?php
 
+<?php
 session_start();
 
 require_once "../config/database.php";
@@ -10,21 +10,18 @@ if (!isset($_SESSION["user_id"])) {
     exit();
 }
 
-// Check if user is a volunteer
+// Check volunteer role
 if (!isset($_SESSION["role"]) || $_SESSION["role"] !== "volunteer") {
     header("Location: ../login.php");
     exit();
 }
 
-$user_id = $_SESSION["user_id"];
+$user_id = (int) $_SESSION["user_id"];
 
 $message = "";
 $error = "";
 
-/* -----------------------------
-   UPDATE PROFILE
------------------------------ */
-
+// UPDATE PROFILE
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     $phone = trim($_POST["phone"] ?? "");
@@ -33,15 +30,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $interests = trim($_POST["interests"] ?? "");
     $availability = trim($_POST["availability"] ?? "");
 
-    // Check if profile already exists
     $check_stmt = $conn->prepare(
         "SELECT id FROM volunteer_profiles WHERE user_id = ?"
     );
 
     if (!$check_stmt) {
-        $error = "Database error: " . $conn->error;
+        $error = "Unable to check your profile. Please try again.";
     } else {
-
         $check_stmt->bind_param("i", $user_id);
         $check_stmt->execute();
 
@@ -49,7 +44,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         if ($check_result->num_rows > 0) {
 
-            // Update existing profile
             $update_stmt = $conn->prepare(
                 "UPDATE volunteer_profiles
                  SET phone = ?, city = ?, skills = ?, interests = ?, availability = ?
@@ -57,7 +51,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             );
 
             if ($update_stmt) {
-
                 $update_stmt->bind_param(
                     "sssssi",
                     $phone,
@@ -69,28 +62,25 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 );
 
                 if ($update_stmt->execute()) {
-                    $message = "Profile updated successfully!";
+                    $message = "Your profile has been updated successfully!";
                 } else {
-                    $error = "Error updating profile: " . $update_stmt->error;
+                    $error = "Unable to update your profile. Please try again.";
                 }
 
                 $update_stmt->close();
-
             } else {
-                $error = "Database error: " . $conn->error;
+                $error = "Unable to prepare the profile update.";
             }
 
         } else {
 
-            // Create new profile
             $insert_stmt = $conn->prepare(
                 "INSERT INTO volunteer_profiles
-                (user_id, phone, city, skills, interests, availability)
-                VALUES (?, ?, ?, ?, ?, ?)"
+                 (user_id, phone, city, skills, interests, availability)
+                 VALUES (?, ?, ?, ?, ?, ?)"
             );
 
             if ($insert_stmt) {
-
                 $insert_stmt->bind_param(
                     "isssss",
                     $user_id,
@@ -102,15 +92,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 );
 
                 if ($insert_stmt->execute()) {
-                    $message = "Profile created successfully!";
+                    $message = "Your profile has been created successfully!";
                 } else {
-                    $error = "Error creating profile: " . $insert_stmt->error;
+                    $error = "Unable to create your profile. Please try again.";
                 }
 
                 $insert_stmt->close();
-
             } else {
-                $error = "Database error: " . $conn->error;
+                $error = "Unable to prepare the profile creation.";
             }
         }
 
@@ -118,10 +107,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 }
 
-/* -----------------------------
-   GET USER INFORMATION
------------------------------ */
-
+// GET USER INFORMATION
 $user_stmt = $conn->prepare(
     "SELECT name, email FROM users WHERE id = ?"
 );
@@ -134,10 +120,11 @@ $user = $user_result->fetch_assoc();
 
 $user_stmt->close();
 
-/* -----------------------------
-   GET VOLUNTEER PROFILE
------------------------------ */
+if (!$user) {
+    die("User information not found.");
+}
 
+// GET VOLUNTEER PROFILE
 $profile_stmt = $conn->prepare(
     "SELECT phone, city, skills, interests, availability
      FROM volunteer_profiles
@@ -150,11 +137,8 @@ $profile_stmt->execute();
 $profile_result = $profile_stmt->get_result();
 
 if ($profile_result->num_rows > 0) {
-
     $profile = $profile_result->fetch_assoc();
-
 } else {
-
     $profile = [
         "phone" => "",
         "city" => "",
@@ -165,268 +149,304 @@ if ($profile_result->num_rows > 0) {
 }
 
 $profile_stmt->close();
-
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Volunteer Profile</title>
+    <title>My Volunteer Profile | Volunteer Match</title>
+
+    <link rel="stylesheet" href="../assets/style.css">
 
     <style>
+        .profile-nav {
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+            padding: 16px 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
 
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f6f8;
+        .profile-brand {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .profile-nav-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+        }
+
+        .profile-nav-links a {
+            font-weight: 600;
+        }
+
+        .profile-container {
+            width: 90%;
+            max-width: 760px;
+            margin: 35px auto;
+        }
+
+        .profile-heading {
+            background: linear-gradient(135deg, #e4f4ec, #fff);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 25px;
+            margin-bottom: 22px;
+        }
+
+        .profile-heading h1 {
+            margin: 0 0 8px;
+        }
+
+        .profile-heading p {
             margin: 0;
-            padding: 0;
+            color: var(--muted);
         }
 
-        .navbar {
-            background-color: #333;
-            padding: 15px;
-            text-align: center;
+        .profile-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 28px;
+            margin-bottom: 22px;
         }
 
-        .navbar a {
-            color: white;
-            text-decoration: none;
-            margin: 0 10px;
-        }
-
-        .navbar a:hover {
-            text-decoration: underline;
-        }
-
-        .container {
-            width: 650px;
-            max-width: 90%;
-            margin: 40px auto;
-            background-color: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        h1 {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        h2 {
-            margin-top: 25px;
-            border-bottom: 1px solid #ddd;
-            padding-bottom: 8px;
+        .profile-panel h2 {
+            font-size: 20px;
+            padding-bottom: 12px;
+            margin: 0 0 18px;
+            border-bottom: 1px solid var(--border);
         }
 
         .personal-info {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 6px;
+            display: grid;
+            gap: 12px;
         }
 
-        .personal-info p {
-            margin: 8px 0;
+        .info-item {
+            padding: 13px 15px;
+            border-radius: 8px;
+            background: #f4f8f6;
+            overflow-wrap: anywhere;
         }
 
-        label {
+        .info-label {
             display: block;
-            margin-top: 15px;
-            margin-bottom: 5px;
-            font-weight: bold;
+            font-size: 13px;
+            color: var(--muted);
+            font-weight: 600;
+            margin-bottom: 3px;
         }
 
-        input,
-        textarea {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 14px;
+        .info-value {
+            font-weight: 600;
         }
 
-        textarea {
+        .profile-form label {
+            display: block;
+            margin: 15px 0 5px;
+            font-weight: 600;
+        }
+
+        .profile-form textarea {
+            min-height: 100px;
             resize: vertical;
         }
 
-        button {
+        .form-help {
+            color: var(--muted);
+            font-size: 13px;
+            margin-top: -8px;
+        }
+
+        .profile-form button {
             width: 100%;
-            padding: 12px;
             margin-top: 20px;
-            background-color: #28a745;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            cursor: pointer;
         }
 
-        button:hover {
-            background-color: #218838;
+        .profile-message {
+            padding: 13px 15px;
+            border-radius: 8px;
+            margin-bottom: 18px;
         }
 
-        .success {
-            background-color: #d4edda;
-            color: #155724;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 20px;
+        .profile-message.success {
+            background: #e6f5eb;
+            color: #176b3a;
+            border: 1px solid #c4e8d0;
         }
 
-        .error {
-            background-color: #f8d7da;
-            color: #721c24;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 20px;
+        .profile-message.error {
+            background: #fff0ee;
+            color: #a52a20;
+            border: 1px solid #f0cbc6;
         }
 
-        .back {
-            display: block;
+        .back-link {
+            display: inline-block;
+            margin: 4px 0 25px;
+            font-weight: 600;
+        }
+
+        .profile-footer {
             text-align: center;
-            margin-top: 20px;
-            text-decoration: none;
+            padding: 24px 12px;
+            color: var(--muted);
+            font-size: 14px;
         }
 
-    </style>
+        @media (max-width: 600px) {
+            .profile-container {
+                width: 92%;
+                margin-top: 22px;
+            }
 
+            .profile-panel {
+                padding: 20px;
+            }
+
+            .profile-nav-links {
+                gap: 12px;
+            }
+        }
+    </style>
 </head>
 
 <body>
 
-    <div class="navbar">
+    <nav class="profile-nav">
+        <a href="../index.php" class="profile-brand">Volunteer Match</a>
 
-        <a href="dashboard.php">Dashboard</a>
+        <div class="profile-nav-links">
+            <a href="dashboard.php">Dashboard</a>
+            <a href="../opportunities.php">Opportunities</a>
+            <a href="applications.php">My Applications</a>
+            <a href="../logout.php">Logout</a>
+        </div>
+    </nav>
 
-        <a href="../opportunities.php">Opportunities</a>
+    <main class="profile-container">
 
-        <a href="applications.php">My Applications</a>
+        <header class="profile-heading">
+            <h1>My Volunteer Profile</h1>
+            <p>
+                Keep your information updated so you can better connect
+                with community opportunities.
+            </p>
+        </header>
 
-        <a href="profile.php">Profile</a>
-
-        <a href="../logout.php">Logout</a>
-
-    </div>
-
-
-    <div class="container">
-
-        <h1>Volunteer Profile</h1>
-
-
-        <?php if ($message != "") { ?>
-
-            <div class="success">
+        <?php if ($message !== ""): ?>
+            <div class="profile-message success" role="status">
                 <?php echo htmlspecialchars($message); ?>
             </div>
+        <?php endif; ?>
 
-        <?php } ?>
-
-
-        <?php if ($error != "") { ?>
-
-            <div class="error">
+        <?php if ($error !== ""): ?>
+            <div class="profile-message error" role="alert">
                 <?php echo htmlspecialchars($error); ?>
             </div>
+        <?php endif; ?>
 
-        <?php } ?>
+        <section class="profile-panel">
+            <h2>Personal Information</h2>
 
+            <div class="personal-info">
+                <div class="info-item">
+                    <span class="info-label">Full Name</span>
+                    <span class="info-value">
+                        <?php echo htmlspecialchars($user["name"]); ?>
+                    </span>
+                </div>
 
-        <h2>Personal Information</h2>
+                <div class="info-item">
+                    <span class="info-label">Email Address</span>
+                    <span class="info-value">
+                        <?php echo htmlspecialchars($user["email"]); ?>
+                    </span>
+                </div>
+            </div>
+        </section>
 
-        <div class="personal-info">
+        <section class="profile-panel">
+            <h2>Volunteer Information</h2>
 
-            <p>
-                <strong>Name:</strong>
-                <?php echo htmlspecialchars($user["name"]); ?>
-            </p>
+            <form method="POST" action="profile.php" class="profile-form">
 
-            <p>
-                <strong>Email:</strong>
-                <?php echo htmlspecialchars($user["email"]); ?>
-            </p>
+                <label for="phone">Phone Number</label>
+                <input
+                    type="tel"
+                    id="phone"
+                    name="phone"
+                    value="<?php echo htmlspecialchars($profile["phone"] ?? ""); ?>"
+                    placeholder="Enter your phone number"
+                    autocomplete="tel"
+                >
 
-        </div>
+                <label for="city">City</label>
+                <input
+                    type="text"
+                    id="city"
+                    name="city"
+                    value="<?php echo htmlspecialchars($profile["city"] ?? ""); ?>"
+                    placeholder="Enter your city"
+                    autocomplete="address-level2"
+                >
 
+                <label for="skills">Skills</label>
+                <textarea
+                    id="skills"
+                    name="skills"
+                    rows="4"
+                    placeholder="Example: HTML, CSS, PHP, Web Development"
+                ><?php echo htmlspecialchars($profile["skills"] ?? ""); ?></textarea>
+                <p class="form-help">
+                    List the skills you can contribute to volunteer activities.
+                </p>
 
-        <h2>Volunteer Information</h2>
+                <label for="interests">Interests</label>
+                <textarea
+                    id="interests"
+                    name="interests"
+                    rows="4"
+                    placeholder="Example: Education, Environment, Community Service"
+                ><?php echo htmlspecialchars($profile["interests"] ?? ""); ?></textarea>
+                <p class="form-help">
+                    Tell organizations which causes you are interested in.
+                </p>
 
+                <label for="availability">Availability</label>
+                <input
+                    type="text"
+                    id="availability"
+                    name="availability"
+                    value="<?php echo htmlspecialchars($profile["availability"] ?? ""); ?>"
+                    placeholder="Example: Weekends or weekday evenings"
+                >
 
-        <form method="POST" action="profile.php">
+                <button type="submit">Save Profile Changes</button>
 
-            <label for="phone">Phone</label>
+            </form>
+        </section>
 
-            <input
-                type="text"
-                id="phone"
-                name="phone"
-                value="<?php echo htmlspecialchars($profile["phone"]); ?>"
-                placeholder="Enter phone number"
-            >
-
-
-            <label for="city">City</label>
-
-            <input
-                type="text"
-                id="city"
-                name="city"
-                value="<?php echo htmlspecialchars($profile["city"]); ?>"
-                placeholder="Enter city"
-            >
-
-
-            <label for="skills">Skills</label>
-
-            <textarea
-                id="skills"
-                name="skills"
-                rows="4"
-                placeholder="Example: Web Development, HTML, CSS, PHP"
-            ><?php echo htmlspecialchars($profile["skills"]); ?></textarea>
-
-
-            <label for="interests">Interests</label>
-
-            <textarea
-                id="interests"
-                name="interests"
-                rows="4"
-                placeholder="Example: Education, Environment, Community Service"
-            ><?php echo htmlspecialchars($profile["interests"]); ?></textarea>
-
-
-            <label for="availability">Availability</label>
-
-            <input
-                type="text"
-                id="availability"
-                name="availability"
-                value="<?php echo htmlspecialchars($profile["availability"]); ?>"
-                placeholder="Example: Weekends"
-            >
-
-
-            <button type="submit">
-                Update Profile
-            </button>
-
-        </form>
-
-
-        <a class="back" href="dashboard.php">
-            ← Back to Dashboard
+        <a class="back-link" href="dashboard.php">
+            ← Back to Volunteer Dashboard
         </a>
 
-    </div>
+    </main>
+
+    <footer class="profile-footer">
+        Local Volunteer Matching System &copy; <?php echo date("Y"); ?>
+    </footer>
 
 </body>
-
 </html>
