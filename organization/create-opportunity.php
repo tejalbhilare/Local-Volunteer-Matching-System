@@ -1,3 +1,4 @@
+
 <?php
 session_start();
 
@@ -10,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 /* Check organization role */
-if ($_SESSION['role'] !== 'organization') {
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'organization') {
     header("Location: ../index.php");
     exit();
 }
@@ -18,13 +19,20 @@ if ($_SESSION['role'] !== 'organization') {
 $message = "";
 $error = "";
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
+$title = "";
+$description = "";
+$location = "";
+$required_skills = "";
+$event_date = "";
 
-    $title = trim($_POST['title']);
-    $description = trim($_POST['description']);
-    $location = trim($_POST['location']);
-    $required_skills = trim($_POST['required_skills']);
-    $event_date = $_POST['event_date'];
+/* Handle form submission */
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+
+    $title = trim($_POST['title'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    $location = trim($_POST['location'] ?? '');
+    $required_skills = trim($_POST['required_skills'] ?? '');
+    $event_date = trim($_POST['event_date'] ?? '');
 
     /* Basic validation */
     if (
@@ -37,45 +45,99 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $error = "Please fill in all fields.";
     } else {
 
-        $organization_id = $_SESSION['user_id'];
+        /*
+         * Get the organization profile ID belonging
+         * to the currently logged-in user.
+         */
+        $user_id = (int) $_SESSION['user_id'];
 
-        $sql = "INSERT INTO opportunities
-                (organization_id, title, description, location, required_skills, event_date)
-                VALUES (?, ?, ?, ?, ?, ?)";
+        $organization_sql = "
+            SELECT id
+            FROM organizations
+            WHERE user_id = ?
+        ";
 
-        $stmt = mysqli_prepare($conn, $sql);
+        $organization_stmt = mysqli_prepare($conn, $organization_sql);
 
-        if ($stmt) {
+        if ($organization_stmt) {
 
             mysqli_stmt_bind_param(
-                $stmt,
-                "isssss",
-                $organization_id,
-                $title,
-                $description,
-                $location,
-                $required_skills,
-                $event_date
+                $organization_stmt,
+                "i",
+                $user_id
             );
 
-            if (mysqli_stmt_execute($stmt)) {
+            mysqli_stmt_execute($organization_stmt);
 
-                $message = "Opportunity created successfully!";
+            $organization_result = mysqli_stmt_get_result($organization_stmt);
+            $organization = mysqli_fetch_assoc($organization_result);
 
-                /* Clear form values */
-                $title = "";
-                $description = "";
-                $location = "";
-                $required_skills = "";
-                $event_date = "";
+            mysqli_stmt_close($organization_stmt);
+
+            if (!$organization) {
+
+                $error = "Organization information not found. Please contact the administrator.";
 
             } else {
-                $error = "Error creating opportunity: " . mysqli_error($conn);
+
+                /* Use organizations.id, not users.id */
+                $organization_id = (int) $organization['id'];
+
+                $sql = "
+                    INSERT INTO opportunities
+                    (
+                        organization_id,
+                        title,
+                        description,
+                        location,
+                        required_skills,
+                        event_date
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ";
+
+                $stmt = mysqli_prepare($conn, $sql);
+
+                if ($stmt) {
+
+                    mysqli_stmt_bind_param(
+                        $stmt,
+                        "isssss",
+                        $organization_id,
+                        $title,
+                        $description,
+                        $location,
+                        $required_skills,
+                        $event_date
+                    );
+
+                    if (mysqli_stmt_execute($stmt)) {
+
+                        $message = "Opportunity created successfully!";
+
+                        /* Clear form values after successful submission */
+                        $title = "";
+                        $description = "";
+                        $location = "";
+                        $required_skills = "";
+                        $event_date = "";
+
+                    } else {
+
+                        $error = "Error creating opportunity: "
+                            . mysqli_stmt_error($stmt);
+                    }
+
+                    mysqli_stmt_close($stmt);
+
+                } else {
+
+                    $error = "Database error: " . mysqli_error($conn);
+                }
             }
 
-            mysqli_stmt_close($stmt);
-
         } else {
+
             $error = "Database error: " . mysqli_error($conn);
         }
     }
@@ -92,7 +154,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <title>Create Opportunity</title>
 
     <style>
-
         body {
             font-family: Arial, sans-serif;
             background-color: #f4f6f8;
@@ -176,7 +237,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             text-decoration: none;
             color: #007bff;
         }
-
     </style>
 </head>
 
@@ -207,7 +267,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             id="title"
             name="title"
             placeholder="Example: Tree Plantation Drive"
-            value="<?php echo htmlspecialchars($title ?? ''); ?>"
+            value="<?php echo htmlspecialchars($title); ?>"
             required
         >
 
@@ -218,7 +278,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             name="description"
             placeholder="Describe the volunteer opportunity..."
             required
-        ><?php echo htmlspecialchars($description ?? ''); ?></textarea>
+        ><?php echo htmlspecialchars($description); ?></textarea>
 
         <label for="location">Location</label>
 
@@ -227,7 +287,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             id="location"
             name="location"
             placeholder="Example: Mumbai, Maharashtra"
-            value="<?php echo htmlspecialchars($location ?? ''); ?>"
+            value="<?php echo htmlspecialchars($location); ?>"
             required
         >
 
@@ -238,7 +298,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             id="required_skills"
             name="required_skills"
             placeholder="Example: Teamwork, Communication"
-            value="<?php echo htmlspecialchars($required_skills ?? ''); ?>"
+            value="<?php echo htmlspecialchars($required_skills); ?>"
             required
         >
 
@@ -248,7 +308,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             type="date"
             id="event_date"
             name="event_date"
-            value="<?php echo htmlspecialchars($event_date ?? ''); ?>"
+            value="<?php echo htmlspecialchars($event_date); ?>"
             required
         >
 
@@ -259,11 +319,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </form>
 
     <a class="back" href="dashboard.php">
-        ← Back to Organization Dashboard
+        &larr; Back to Organization Dashboard
     </a>
 
 </div>
 
 </body>
-
 </html>
